@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FROX PROXY</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:'Courier New',monospace}
+        body{background:#0a0e14;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:15px}
+        .container{background:#121a24;border:1px solid #2a3a4a;border-radius:14px;padding:30px 28px;max-width:520px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,0.9)}
+        .title{color:#7ab8f0;font-size:20px;font-weight:bold;text-align:center;letter-spacing:3px;border-bottom:1px solid #1a2a3a;padding-bottom:15px;margin-bottom:18px}
+        .title small{color:#4a6a7a;font-size:11px;display:block;font-weight:normal;letter-spacing:1px}
+
+        .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:15px}
+        .stat-box{background:#0b0e14;border:1px solid #1a2a3a;border-radius:6px;padding:8px 6px;text-align:center}
+        .stat-box .label{color:#4a6a7a;font-size:9px;text-transform:uppercase;letter-spacing:0.5px}
+        .stat-box .value{color:#b8d8e8;font-size:16px;font-weight:bold}
+        .stat-box .value.green{color:#6fcf97}
+        .stat-box .value.orange{color:#f0c060}
+
+        .verify-badge{text-align:center;font-size:11px;padding:6px;border-radius:6px;margin-bottom:12px}
+        .verify-badge.ok{background:#123a2a;color:#6fcf97;border:1px solid #2a5a3a}
+        .verify-badge.no{background:#3a2a12;color:#f0c060;border:1px solid #5a4a2a}
+
+        .btn-group{display:flex;gap:10px;margin-top:15px}
+        .btn{flex:1;padding:12px 10px;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer;transition:0.2s;text-align:center;border:1px solid #2a4a5a;background:#1a2a3a;color:#c0d8e8}
+        .btn:hover{background:#2a3a4a;border-color:#4a7a8a;color:#fff}
+        .btn-primary{background:#1a4a3a;border-color:#2a7a5a;color:#8fdfb0}
+        .btn-primary:hover{background:#2a5a4a;border-color:#4a9a7a}
+        .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
+        .btn-copy{background:#1a3a4a;border-color:#2a5a7a;color:#7ac0e0}
+        .btn-copy:hover{background:#2a4a5a;border-color:#4a7aaa}
+
+        .footer{color:#3a5a6a;font-size:10px;text-align:center;border-top:1px solid #1a2a3a;padding-top:14px;margin-top:18px}
+        .log{background:#0b0e14;border-radius:4px;padding:6px 10px;border:1px solid #1a2a3a;margin-top:12px;color:#4a6a7a;font-size:10px;max-height:50px;overflow-y:auto}
+        .log-entry{color:#5a7a8a}
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="title">
+        ⚡ FROX PROXY
+        <small>Hệ thống Key tự động - Lấy key ngay khi có người dùng</small>
+    </div>
+
+    <div style="color:#5a7a8a;font-size:12px;text-align:center;margin-bottom:12px">
+        Ngày: <strong style="color:#8ab0c8" id="dateDisplay"></strong>
+    </div>
+
+    <div class="verify-badge no" id="verifyBadge">🔒 Bạn cần vượt link 1 lần để lấy key (hiệu lực 24h)</div>
+
+    <div class="stats">
+        <div class="stat-box"><div class="label">Đã tạo</div><div class="value" id="created">0</div></div>
+        <div class="stat-box"><div class="label">Đã dùng</div><div class="value" id="used">0</div></div>
+        <div class="stat-box"><div class="label">Còn lại</div><div class="value green" id="remaining">0</div></div>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn btn-primary" id="getKeyBtn">🔗 VƯỢT LINK ĐỂ LẤY KEY</button>
+        <button class="btn btn-copy" id="copyBtn">📋 COPY KEY</button>
+    </div>
+
+    <div style="color:#6fcf97;font-size:12px;text-align:center;margin-top:10px" id="expiryDisplay">Còn hạn: --</div>
+
+    <div class="log" id="logArea">
+        <div class="log-entry">[INIT] Hệ thống sẵn sàng</div>
+    </div>
+    <div class="footer">Minh Hoang · FROX PROXY v2.0</div>
+</div>
+
+<script>
+    (function() {
+        let currentKey = null;
+        let expiresAt = null;
+        let countdownTimer = null;
+        let isVerified = false;
+
+        const createdEl = document.getElementById('created');
+        const usedEl = document.getElementById('used');
+        const remainingEl = document.getElementById('remaining');
+        const logEl = document.getElementById('logArea');
+        const dateDisplay = document.getElementById('dateDisplay');
+        const expiryEl = document.getElementById('expiryDisplay');
+        const verifyBadge = document.getElementById('verifyBadge');
+        const getKeyBtn = document.getElementById('getKeyBtn');
+
+        dateDisplay.textContent = new Date().toLocaleDateString('vi-VN');
+
+        function updateStats(data) {
+            createdEl.textContent = data.created;
+            usedEl.textContent = data.used;
+            remainingEl.textContent = data.remaining;
+        }
+
+        function renderLogs(logs) {
+            logEl.innerHTML = '';
+            logs.forEach(msg => {
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                entry.textContent = msg;
+                logEl.appendChild(entry);
+            });
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function setVerifiedUI(verified) {
+            isVerified = verified;
+            if (verified) {
+                verifyBadge.className = 'verify-badge ok';
+                verifyBadge.textContent = '✅ Đã vượt link - có thể lấy key thoải mái trong 24h';
+                getKeyBtn.textContent = '▶ LẤY KEY NGAY';
+            } else {
+                verifyBadge.className = 'verify-badge no';
+                verifyBadge.textContent = '🔒 Bạn cần vượt link 1 lần để lấy key (hiệu lực 24h)';
+                getKeyBtn.textContent = '🔗 VƯỢT LINK ĐỂ LẤY KEY';
+            }
+        }
+
+        function startCountdown() {
+            if (countdownTimer) clearInterval(countdownTimer);
+            countdownTimer = setInterval(() => {
+                if (!expiresAt) return;
+                const diff = expiresAt - Date.now();
+                if (diff <= 0) {
+                    expiryEl.textContent = 'Key đã hết hạn';
+                    clearInterval(countdownTimer);
+                    return;
+                }
+                const h = Math.floor(diff / 3600000);
+                const m = Math.floor((diff % 3600000) / 60000);
+                const s = Math.floor((diff % 60000) / 1000);
+                expiryEl.textContent = `Còn hạn: ${h}h ${m}m ${s}s`;
+            }, 1000);
+        }
+
+        async function checkVerifyStatus() {
+            try {
+                const res = await fetch('/api/verify-status');
+                const data = await res.json();
+                setVerifiedUI(data.verified);
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function startVerify() {
+            getKeyBtn.disabled = true;
+            getKeyBtn.textContent = 'Đang tạo link...';
+            try {
+                const res = await fetch('/api/start-verify', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok || !data.url) {
+                    getKeyBtn.disabled = false;
+                    setVerifiedUI(false);
+                    verifyBadge.textContent = '⚠ Không thể tạo link, thử lại sau';
+                    return;
+                }
+                window.location.href = data.url;
+            } catch (err) {
+                console.error(err);
+                getKeyBtn.disabled = false;
+            }
+        }
+
+        async function getKey() {
+            try {
+                const res = await fetch('/api/get-key', { method: 'POST' });
+                const data = await res.json();
+
+                if (res.status === 403 && data.error === 'need_verify') {
+                    setVerifiedUI(false);
+                    return;
+                }
+                if (!res.ok) {
+                    expiryEl.textContent = 'Hết key khả dụng, thử lại sau';
+                    updateStats(data);
+                    renderLogs(data.logs);
+                    return;
+                }
+
+                currentKey = data.key;
+                expiresAt = new Date(data.expires_at).getTime();
+                updateStats(data);
+                renderLogs(data.logs);
+                startCountdown();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function copyKey() {
+            if (!currentKey) return;
+            navigator.clipboard.writeText(currentKey).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = currentKey;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            });
+        }
+
+        getKeyBtn.addEventListener('click', () => {
+            if (isVerified) {
+                getKey();
+            } else {
+                startVerify();
+            }
+        });
+        document.getElementById('copyBtn').addEventListener('click', copyKey);
+
+        // Lấy stats ban đầu
+        fetch('/api/stats').then(r => r.json()).then(updateStats);
+
+        // Kiểm tra trạng thái vượt link
+        const params = new URLSearchParams(window.location.search);
+        checkVerifyStatus().then(() => {
+            if (params.get('verified') === '1' && isVerified) {
+                setTimeout(getKey, 300);
+            }
+            if (params.has('verified')) {
+                window.history.replaceState({}, '', window.location.pathname);
+            }
+        });
+    })();
+</script>
+</body>
+  </html>
